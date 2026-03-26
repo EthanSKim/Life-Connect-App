@@ -1,0 +1,53 @@
+// 성도 등록 -> 목사님이 직접 개인 정보와 유저네임 생성해서 db에 저장 후 성도에게 유저네임 전달
+// 아마 제일 쉬운건 유저네임 = 이름. 동명이인은 김수환2..ㅎㅎ
+// 아니면 유저네임 = 이름+생일 -> 김수환1206
+
+// 로그인 로직
+// 이름/유저네임 입력 (이름이 교회 성도 중에 있는지, 비밀번호를 설정했는지 확인)
+// db에 비밀번호가 없을 시 -> 새로운 비밀번호 6 자리 pin 설정.
+// db에 비밀번호가 존재 -> hash된 6자리 pin을 db와 비교 후 승인.
+
+// 이름 입력 시 보낼것:
+
+var payload = {
+  user_name: "김수환1206",
+};
+
+var response = {
+  status: "success",
+  result: {
+    user_id: 1,
+    is_member: true,
+    has_password: false,
+    message: "비밀번호 설정이 필요합니다.",
+  },
+};
+
+// 새로운 성도 등록:
+var paylaod = {
+  first_name: "수환",
+  last_name: "김",
+  birthday: "2000-12-06",
+  gender: "MALE",
+  phone: "512-566-9091",
+  email: "example@gmail.com",
+  address: {
+    street: "342 S Dorsey Ln",
+    city: "Louisville",
+    state: "KY",
+    zip_code: "40223",
+    country: "USA",
+  },
+  role: "member", // OR "admin",
+  life_team: "Mz's Us 라이프팀",
+  church_title: "성도", // OR "집사님", "목사님" 등등
+};
+
+// 백엔드에서 user_id (PK) 랑 user_name 생성해서 보내주세요~
+var response = {
+  status: "success",
+  result: {
+    user_id: 1,
+    user_namme: "김수환1206",
+  },
+};
