@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show Platform;
+import 'main.dart';
 import 'main_tab_screen.dart';
+import 'auth_session.dart';
+import 'set_pin_screen.dart';
+import 'api_client.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,91 +19,141 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _pinController = TextEditingController();
 
   bool _isNameConfirmed = false; // 이름 입력 후 '다음'을 눌렀는지 여부
-  bool _isNewUser = true; // DB에 핀이 없는 신규 유저인지 여부 (가상)
+  bool _isNewUser = false; 
+  int? _personId; // DB에서 받아온 사용자 ID 고정
+  bool _isBusy = false; // 통신 중 여부
+
+  // [API 호출] 성함 확인
+  Future<void> _verifyMember() async {
+    if (_nameController.text.isEmpty) return;
+    setState(() => _isBusy = true);
+    try {
+      final data = await ApiClient.post('/api/auth/verify-member', body: {"name": _nameController.text});
+      setState(() {
+        _isNameConfirmed = true;
+        _isNewUser = data['isNewUser'];
+        // PostgreSQL BIGINT는 문자열로 들어올 수 있으므로 안전하게 파싱합니다.
+        _personId = data['person_id'] is int
+            ? data['person_id']
+            : int.tryParse(data['person_id'].toString());
+      });
+    } on ApiException catch (e) {
+      _showAlert(e.message);
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  // [API 호출] 로그인
+  Future<void> _login() async {
+    if (_pinController.text.length < 6) return;
+    setState(() => _isBusy = true);
+    try {
+      final data = await ApiClient.post('/api/auth/login', body: {
+        "person_id": _personId,
+        "pin": _pinController.text,
+      });
+      if (!mounted) return;
+      AuthSession.token = data['token'];
+      final bool isDefaultPin = data['is_default_pin'] == true;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => isDefaultPin
+            ? SetPinScreen(
+                userName: _nameController.text,
+                personId: _personId!,
+                oldPin: _pinController.text,
+                isAdmin: data['membership_role'] == 'Admin',
+                userTitle: data['church_title'] ?? '성도님',
+              )
+            : MainTabScreen(
+          userName: _nameController.text,
+          personId: _personId!, // ID 전달
+          userPin: _pinController.text, // PIN 전달 추가
+          isAdmin: data['membership_role'] == 'Admin',
+          userTitle: data['church_title'] ?? '성도님',
+        )),
+      );
+    } on ApiException catch (e) {
+      _showAlert(e.message);
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  void _showAlert(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("알림"),
+        content: Text(message),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("확인"))],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primaryColor = theme.primaryColor;
-    final secondaryColor = theme.colorScheme.secondary;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
         child: SingleChildScrollView(
-          // 상단 여백 유지
-          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 80),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 60),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 40),
+              const SizedBox(height: 20),
 
-              // 1. 텍스트 로고 (기존 스타일 유지)
-              RichText(
-                text: TextSpan(
-                  style: const TextStyle(
-                    fontSize: 42,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -1.5,
-                  ),
-                  children: [
-                    TextSpan(
-                      text: "Life ",
-                      style: TextStyle(color: primaryColor),
-                    ),
-                    TextSpan(
-                      text: "Connect",
-                      style: TextStyle(color: secondaryColor),
-                    ),
-                  ],
+              // 로고 마크
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.asset(
+                  'assets/images/logo.png',
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 24),
               const Text(
-                "LOUISVILLE WOORI CHURCH",
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                  letterSpacing: 4.0,
-                  fontWeight: FontWeight.bold,
-                ),
+                "Life Connect",
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: kTextPrimary),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                "성함으로 로그인하세요",
+                style: TextStyle(fontSize: 14, color: kTextSecondary),
               ),
 
-              const SizedBox(height: 80),
+              const SizedBox(height: 44),
 
-              // 2. 이름 입력 영역
+              // 이름 입력 영역
               _buildInputLabel("성함"),
               TextField(
                 controller: _nameController,
                 enabled: !_isNameConfirmed, // 이름 확정 시 수정 불가 모드
                 decoration: InputDecoration(
-                  hintText: "성함을 입력하세요",
-                  filled: true,
-                  fillColor: _isNameConfirmed ? Colors.grey[200] : Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 20,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none,
-                  ),
+                  hintText: "이름을 입력하세요",
+                  fillColor: _isNameConfirmed ? kBorder : kFieldFill,
                 ),
               ),
 
-              // 3. PIN 입력 영역 (애니메이션 등장)
+              // PIN 입력 영역 (애니메이션 등장)
               AnimatedOpacity(
-                duration: const Duration(milliseconds: 500),
+                duration: const Duration(milliseconds: 400),
                 opacity: _isNameConfirmed ? 1.0 : 0.0,
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 500),
+                  duration: const Duration(milliseconds: 400),
                   curve: Curves.fastOutSlowIn,
-                  height: _isNameConfirmed ? 160 : 0, // 스르륵 열리는 효과
+                  height: _isNameConfirmed ? 150 : 0, // 스르륵 열리는 효과
                   child: SingleChildScrollView(
                     physics: const NeverScrollableScrollPhysics(),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SizedBox(height: 30),
+                        const SizedBox(height: 24),
                         _buildInputLabel(
                           _isNewUser ? "새로운 PIN 설정 (6자리)" : "PIN 번호 입력",
                         ),
@@ -106,25 +162,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           obscureText: true,
                           keyboardType: TextInputType.number,
                           maxLength: 6,
-                          style: const TextStyle(
-                            letterSpacing: 10,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          decoration: InputDecoration(
-                            counterText: "",
-                            hintText: "숫자 6자리",
-                            filled: true,
-                            fillColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 20,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: BorderSide.none,
-                            ),
-                          ),
+                          style: const TextStyle(letterSpacing: 10, fontSize: 20, fontWeight: FontWeight.w600),
+                          decoration: const InputDecoration(counterText: "", hintText: "숫자 6자리"),
                         ),
                       ],
                     ),
@@ -132,63 +171,34 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: 36),
 
-              // 4. 메인 버튼
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 65),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  elevation: 0,
-                ),
-                onPressed: () {
-                  if (!_isNameConfirmed) {
-                    // [1단계] 성함 확인 버튼 클릭 시
-                    if (_nameController.text.isNotEmpty) {
-                      setState(() {
-                        _isNameConfirmed = true;
-                        // 가상 로직: '김수환'면 기존 유저(PIN 입력), 아니면 신규(PIN 설정)
-                        _isNewUser =
-                            (_nameController.text != "김수환" ||
-                            _nameController.text != "박민우");
-                      });
-                    }
-                  } else {
-                    // [2단계] PIN 입력 후 입장
-                    if (_pinController.text.length == 6) {
-                      String inputName = _nameController.text;
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              MainTabScreen(userName: inputName), // 이름 전달
+              // 메인 버튼
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 58)),
+                  onPressed: _isBusy ? null : (!_isNameConfirmed ? _verifyMember : _login),
+                  child: _isBusy
+                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : Text(
+                          !_isNameConfirmed
+                              ? "성함 확인"
+                              : (_isNewUser ? "PIN 등록 및 입장" : "로그인"),
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                         ),
-                      );
-                    }
-                  }
-                },
-                child: Text(
-                  !_isNameConfirmed
-                      ? "성함 확인"
-                      : (_isNewUser ? "PIN 등록 및 입장" : "로그인"),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
                 ),
               ),
 
               // 성함 수정 버튼
               if (_isNameConfirmed)
-                TextButton(
-                  onPressed: () => setState(() => _isNameConfirmed = false),
-                  child: const Text(
-                    "성함을 잘못 입력하셨나요?",
-                    style: TextStyle(color: Colors.grey),
+                Center(
+                  child: TextButton(
+                    onPressed: () => setState(() => _isNameConfirmed = false),
+                    child: const Text(
+                      "성함을 잘못 입력하셨나요?",
+                      style: TextStyle(color: kTextSecondary, fontWeight: FontWeight.normal),
+                    ),
                   ),
                 ),
             ],
@@ -200,17 +210,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildInputLabel(String label) {
     return Padding(
-      padding: const EdgeInsets.only(left: 5, bottom: 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Colors.black45,
-          ),
-        ),
+      padding: const EdgeInsets.only(left: 2, bottom: 8),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kTextSecondary),
       ),
     );
   }

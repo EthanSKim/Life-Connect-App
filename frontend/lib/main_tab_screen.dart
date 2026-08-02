@@ -1,15 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show Platform;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'profile_screen.dart';
 import 'widgets/skeletons.dart';
+import 'package:url_launcher/url_launcher.dart'; // 패키지 설치 필요: flutter pub add url_launcher
 import 'admin/admin_main_screen.dart';
+import 'config.dart';
+import 'auth_session.dart';
+import 'facility_booking_screen.dart';
+import 'main.dart';
+import 'api_client.dart';
+import 'widgets/facility_icons.dart';
 
 class MainTabScreen extends StatefulWidget {
   final String userName; // 로그인한 사용자 이름을 받습니다.
+  final int personId;    // 로그인한 사용자 ID를 받습니다.
+  final bool isAdmin;    // 관리자 여부
+  final String userTitle; // 직급 (목사, 집사 등)
+  final String userPin;   // QR 생성을 위한 PIN
 
   const MainTabScreen({
     super.key,
     required this.userName, // 필수 인자로 설정
+    required this.personId,
+    required this.userPin,
+    required this.isAdmin,
+    required this.userTitle,
   });
 
   @override
@@ -19,26 +36,61 @@ class MainTabScreen extends StatefulWidget {
 class _MainTabScreenState extends State<MainTabScreen> {
   int _selectedIndex = 0;
 
-  // 초기화 시 이름을 확인하여 권한 설정
-  late final bool _isAdmin;
   bool _isLoadingNotices = true;
+  List<dynamic> _notices = [];
+  bool _isAttended = false; // 오늘 출석 여부 상태 추가
+  
+  // 예약 관련 상태
+  List<dynamic> _facilities = [];
+  bool _isLoadingFacilities = true;
 
   @override
   void initState() {
     super.initState();
-    // 박민우면 목사님(Admin), 아니면 일반 성도
-    _isAdmin = widget.userName == "박민우";
-    _startLoadingTimer();
+    _fetchNotices();
+    _fetchFacilities();
+    _checkAttendanceStatus(); // 출석 상태 확인 호출
   }
 
-  void _startLoadingTimer() {
-    Future.delayed(const Duration(seconds: 3), () {
+  // 오늘 출석했는지 서버에 확인
+  Future<void> _checkAttendanceStatus() async {
+    try {
+      final data = await ApiClient.get('/api/attendance/status/${widget.personId}');
+      if (mounted) setState(() => _isAttended = data['attended']);
+    } on ApiException catch (e) {
+      debugPrint("출석 상태 확인 실패: ${e.message}");
+    }
+  }
+
+  Future<void> _fetchNotices() async {
+    try {
+      final data = await ApiClient.get('/api/notices');
       if (mounted) {
         setState(() {
+          _notices = data;
           _isLoadingNotices = false;
         });
       }
-    });
+    } on ApiException catch (e) {
+      debugPrint("공지사항 로딩 실패: ${e.message}");
+      if (mounted) setState(() => _isLoadingNotices = false);
+    }
+  }
+
+  Future<void> _fetchFacilities() async {
+    setState(() => _isLoadingFacilities = true);
+    try {
+      final data = await ApiClient.get('/api/facilities');
+      if (mounted) {
+        setState(() {
+          _facilities = data;
+          _isLoadingFacilities = false;
+        });
+      }
+    } on ApiException catch (e) {
+      debugPrint("장소 정보 로딩 실패: ${e.message}");
+      if (mounted) setState(() => _isLoadingFacilities = false);
+    }
   }
 
   // --- [추가] 순차적 등장을 위한 애니메이션 위젯 ---
@@ -82,14 +134,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 children: [
                   const Text(
                     "반갑습니다,",
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                    style: TextStyle(fontSize: 15, color: kTextSecondary),
                   ),
                   Text(
-                    "${widget.userName} ${_isAdmin ? '목사님' : '성도님'}", // 권한에 따른 호칭 변경
+                    "${widget.userName} ${widget.userTitle}", // DB에 등록된 직급 사용
                     style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: theme.primaryColor,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                      color: kTextPrimary,
                     ),
                   ),
                 ],
@@ -99,17 +151,20 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const ProfileScreen(isAdmin: false),
+                      builder: (context) => ProfileScreen(
+                        isAdmin: false,
+                        personId: widget.personId, // ID 전달
+                      ),
                     ),
                   );
                 },
                 child: CircleAvatar(
-                  radius: 25,
-                  backgroundColor: theme.colorScheme.secondary.withOpacity(0.2),
+                  radius: 22,
+                  backgroundColor: kFieldFill,
                   child: Icon(
                     Icons.person_rounded,
-                    color: theme.colorScheme.secondary,
-                    size: 30,
+                    color: kTextSecondary,
+                    size: 26,
                   ),
                 ),
               ),
@@ -122,7 +177,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _buildAnimatedItem(
           delayMs: 150,
           child: _buildAttendanceStatusCard(
-            isChecked: false,
+            isChecked: _isAttended, // 실제 상태 적용
             onTap: () => setState(() => _selectedIndex = 1),
           ),
         ),
@@ -136,12 +191,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                "📢 교회 공지사항",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                "교회 공지사항",
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: kTextPrimary),
               ),
               TextButton(
                 onPressed: () {},
-                child: const Text("전체보기", style: TextStyle(color: Colors.grey)),
+                child: const Text("전체보기", style: TextStyle(color: kTextSecondary, fontWeight: FontWeight.normal)),
               ),
             ],
           ),
@@ -151,32 +206,18 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _isLoadingNotices
             ? const NoticeSkeleton(itemCount: 3) // 훨씬 깔끔해진 코드!
             : Column(
-                children: [
-                  _buildAnimatedItem(
-                    delayMs: 450,
+                children: _notices.asMap().entries.map((entry) {
+                  int idx = entry.key;
+                  var notice = entry.value;
+                  return _buildAnimatedItem(
+                    delayMs: 450 + (idx * 100),
                     child: _buildNoticeItem(
-                      "이번 주 라이프팀 리더 모임 안내",
-                      "2026-01-19",
-                      true,
+                      notice['title'],
+                      notice['date'],
+                      notice['is_new'],
                     ),
-                  ),
-                  _buildAnimatedItem(
-                    delayMs: 550,
-                    child: _buildNoticeItem(
-                      "이은수❤️조은애 베이비 샤워 ",
-                      "2026-01-17",
-                      false,
-                    ),
-                  ),
-                  _buildAnimatedItem(
-                    delayMs: 650,
-                    child: _buildNoticeItem(
-                      "날씨로 인한 예배 변경 사항",
-                      "2026-01-15",
-                      false,
-                    ),
-                  ),
-                ],
+                  );
+                }).toList(),
               ),
       ],
     );
@@ -190,28 +231,16 @@ class _MainTabScreenState extends State<MainTabScreen> {
     final theme = Theme.of(context);
     final primary = theme.primaryColor;
     final secondary = theme.colorScheme.secondary;
+    const checkedText = Color(0xFF4A2E00); // 노란 배경 위 충분한 대비를 위한 진한 amber
 
     return GestureDetector(
       onTap: isChecked ? null : onTap,
       child: Container(
         width: double.infinity,
-        height: 160,
+        height: 150,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isChecked
-                ? [secondary, const Color(0xFFFFD700)]
-                : [primary, primary.withOpacity(0.7)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: (isChecked ? secondary : primary).withOpacity(0.4),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
+          color: isChecked ? secondary : primary,
+          borderRadius: BorderRadius.circular(24),
         ),
         child: Stack(
           children: [
@@ -220,11 +249,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
               top: -20,
               child: CircleAvatar(
                 radius: 60,
-                backgroundColor: Colors.white.withOpacity(0.1),
+                backgroundColor: Colors.white.withOpacity(0.08),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(25),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -232,30 +261,28 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   Row(
                     children: [
                       Icon(
-                        isChecked ? Icons.verified : Icons.auto_awesome,
-                        color: isChecked ? Colors.black87 : Colors.white,
-                        size: 20,
+                        isChecked ? Icons.verified : Icons.qr_code_2,
+                        color: isChecked ? checkedText : Colors.white,
+                        size: 18,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         isChecked ? "축복합니다!" : "환영합니다!",
                         style: TextStyle(
-                          color: isChecked
-                              ? Colors.black87
-                              : Colors.white.withOpacity(0.9),
-                          fontSize: 15,
+                          color: isChecked ? checkedText : Colors.white70,
+                          fontSize: 14,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   Text(
                     isChecked ? "오늘 출석이 완료되었습니다" : "탭하여 출석 QR을 띄우세요",
                     style: TextStyle(
-                      color: isChecked ? Colors.black : Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
+                      color: isChecked ? checkedText : Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -270,11 +297,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
   Widget _buildNoticeItem(String title, String date, bool isNew) {
     final theme = Theme.of(context);
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kBorder),
       ),
       child: ListTile(
         title: Row(
@@ -285,11 +312,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.secondary,
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: const Text(
                   "NEW",
-                  style: TextStyle(fontSize: 10, color: Colors.white),
+                  style: TextStyle(fontSize: 10, color: Color(0xFF4A2E00), fontWeight: FontWeight.w600),
                 ),
               ),
             Expanded(
@@ -300,8 +327,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
             ),
           ],
         ),
-        subtitle: Text(date),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+        subtitle: Text(date, style: const TextStyle(color: kTextSecondary)),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: kTextSecondary),
         onTap: () {},
       ),
     );
@@ -317,12 +344,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
           children: [
             const Text(
               "아이패드 카메라에 보여주세요",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: kTextPrimary),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             const Text(
               "화면을 밝게 하시면 인식이 더 잘 됩니다",
-              style: TextStyle(fontSize: 14, color: Colors.grey),
+              style: TextStyle(fontSize: 13, color: kTextSecondary),
             ),
             const SizedBox(height: 40),
             Container(
@@ -330,33 +357,40 @@ class _MainTabScreenState extends State<MainTabScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 20,
-                  ),
-                ],
                 border: Border.all(
                   color: Theme.of(context).primaryColor,
-                  width: 3,
+                  width: 2,
                 ),
               ),
               child: QrImageView(
-                data: "김수환550101",
+                data: "${widget.userName}|${widget.userPin}", // 이름|PIN 형식으로 변경
                 version: QrVersions.auto,
                 size: 250.0,
               ),
             ),
             const SizedBox(height: 40),
-            const Text(
-              "Mz's Us 라이프팀",
-              style: TextStyle(fontSize: 18, color: Colors.grey),
-            ),
+            
+            if (!kIsWeb && Platform.isIOS)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 20),
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final url = Uri.parse('${AppConfig.baseUrl}/api/wallet/apple-pass/${widget.personId}?token=${AuthSession.token ?? ''}');
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(url, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  icon: const Icon(Icons.add_box_outlined),
+                  label: const Text("Apple Wallet에 추가"),
+                  style: TextButton.styleFrom(foregroundColor: Colors.black),
+                ),
+              ),
+
             Text(
-              "${widget.userName} ${_isAdmin ? '목사님' : '성도님'}",
+              "${widget.userName} ${widget.userTitle}", // DB에 등록된 직급 적용
               style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
                 color: Theme.of(context).primaryColor,
               ),
             ),
@@ -374,138 +408,30 @@ class _MainTabScreenState extends State<MainTabScreen> {
           delayMs: 0,
           child: const Text(
             "모임 장소 예약",
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: kTextPrimary),
+          ),
+        ),
+        const SizedBox(height: 6),
+        _buildAnimatedItem(
+          delayMs: 0,
+          child: const Text(
+            "장소를 선택하면 날짜와 시간을 고를 수 있어요",
+            style: TextStyle(fontSize: 13, color: kTextSecondary),
           ),
         ),
         const SizedBox(height: 20),
-        _buildAnimatedItem(
-          delayMs: 100,
-          child: _buildRoomCard("본당", "사용 가능", Icons.church),
-        ),
-        _buildAnimatedItem(
-          delayMs: 200,
-          child: _buildRoomCard("식당", "예약 완료", Icons.coffee),
-        ),
-        _buildAnimatedItem(
-          delayMs: 300,
-          child: _buildRoomCard("Youth Group", "사용 가능", Icons.groups),
-        ),
+        if (_isLoadingFacilities)
+          const Center(child: CircularProgressIndicator())
+        else
+          ..._facilities.asMap().entries.map((entry) {
+            int idx = entry.key;
+            var facility = entry.value;
+            return _buildAnimatedItem(
+              delayMs: 100 + (idx * 100),
+              child: _buildRoomCard(facility),
+            );
+          }).toList(),
       ],
-    );
-  }
-
-  Future<void> _selectReservation(BuildContext context, String roomName) async {
-    final theme = Theme.of(context);
-
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-
-      initialDate: DateTime.now(),
-
-      firstDate: DateTime.now(),
-
-      lastDate: DateTime.now().add(const Duration(days: 30)),
-
-      helpText: "$roomName 예약 날짜 선택",
-
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: theme.primaryColor, // 테마 컬러 적용
-
-              onPrimary: Colors.white,
-
-              onSurface: Colors.black,
-            ),
-          ),
-
-          child: child!,
-        );
-      },
-    );
-
-    if (pickedDate != null) {
-      final TimeOfDay? pickedTime = await showTimePicker(
-        context: context,
-
-        initialTime: TimeOfDay.now(),
-
-        helpText: "$roomName 예약 시간 선택",
-      );
-
-      if (pickedTime != null) {
-        _showConfirmDialog(context, roomName, pickedDate, pickedTime);
-      }
-    }
-  }
-
-  void _showConfirmDialog(
-    BuildContext context,
-
-    String room,
-
-    DateTime date,
-
-    TimeOfDay time,
-  ) {
-    final theme = Theme.of(context);
-
-    showDialog(
-      context: context,
-
-      builder: (context) => AlertDialog(
-        title: const Text(
-          "예약 확인",
-
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-
-        content: Text(
-          "장소: $room\n"
-          "날짜: ${date.year}년 ${date.month}월 ${date.day}일\n"
-          "시간: ${time.format(context)}\n\n"
-          "이 정보로 예약하시겠습니까?",
-
-          style: const TextStyle(fontSize: 16),
-        ),
-
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-
-            child: const Text("취소", style: TextStyle(color: Colors.grey)),
-          ),
-
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.secondary, // 테마 컬러 적용
-            ),
-
-            onPressed: () {
-              Navigator.pop(context);
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text("$room 예약이 완료되었습니다!"),
-
-                  backgroundColor: theme.primaryColor, // 테마 컬러 적용
-                ),
-              );
-            },
-
-            child: const Text(
-              "예약 확정",
-
-              style: TextStyle(
-                color: Colors.black,
-
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -514,50 +440,33 @@ class _MainTabScreenState extends State<MainTabScreen> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(70),
+        preferredSize: const Size.fromHeight(64),
         child: AppBar(
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          backgroundColor: theme.scaffoldBackgroundColor,
           elevation: 0,
-          title: Padding(
-            padding: const EdgeInsets.only(left: 10, top: 15),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -1.2,
-                    ),
-                    children: [
-                      TextSpan(
-                        text: "Life ",
-                        style: TextStyle(color: theme.primaryColor),
-                      ),
-                      TextSpan(
-                        text: "Connect",
-                        style: TextStyle(color: theme.colorScheme.secondary),
-                      ),
-                    ],
-                  ),
+          title: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.asset(
+                  'assets/images/logo.png',
+                  width: 34,
+                  height: 34,
+                  fit: BoxFit.cover,
                 ),
-                const Text(
-                  "LOUISVILLE WOORI CHURCH",
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 10,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                "Life Connect",
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: kTextPrimary),
+              ),
+            ],
           ),
           actions: [
             Padding(
-              padding: const EdgeInsets.only(right: 20, top: 10),
+              padding: const EdgeInsets.only(right: 10),
               child: IconButton(
-                icon: const Icon(Icons.notifications_none_rounded),
+                icon: const Icon(Icons.notifications_none_rounded, color: kTextSecondary),
                 onPressed: () {},
               ),
             ),
@@ -571,15 +480,18 @@ class _MainTabScreenState extends State<MainTabScreen> {
           _buildHomeScreen(),
           _buildQRScreen(),
           _buildReservationScreen(),
-          if (_isAdmin) const AdminMainScreen(), // 관리자 전용 페이지 추가
+          if (widget.isAdmin) const AdminMainScreen(), // 전달받은 관리자 여부 사용
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        selectedItemColor: theme.colorScheme.secondary,
-        unselectedItemColor: Colors.grey,
-        type: BottomNavigationBarType.fixed, // 탭이 4개일 때는 fixed가 안정적입니다
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: (index) {
+          setState(() => _selectedIndex = index);
+          // IndexedStack은 모든 탭을 계속 살려두므로, 관리자 탭에서 장소를
+          // 추가/변경해도 홈/예약 탭의 기존 목록은 자동으로 갱신되지 않는다.
+          // 탭을 누를 때마다 다시 불러와서 항상 최신 상태를 보장한다.
+          _fetchFacilities();
+        },
         items: [
           const BottomNavigationBarItem(
             icon: Icon(Icons.home_filled),
@@ -593,7 +505,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
             icon: Icon(Icons.calendar_month),
             label: "예약",
           ),
-          if (_isAdmin)
+          if (widget.isAdmin)
             const BottomNavigationBarItem(
               icon: Icon(Icons.admin_panel_settings),
               label: "관리",
@@ -603,46 +515,62 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // _buildRoomCard 등 누락된 헬퍼 위젯들 기존 소스 그대로 사용
-  Widget _buildRoomCard(String name, String status, IconData icon) {
+  Widget _buildRoomCard(Map<String, dynamic> facility) {
     final theme = Theme.of(context);
-    bool isAvailable = status == "사용 가능";
+    String name = facility['name'];
+    String? description = facility['description'];
+    final bool isReservable = facility['is_reservable'] ?? true;
+
+    // 아이콘 매핑 (widgets/facility_icons.dart - 관리자 화면과 공유)
+    final icon = facilityIconFor(facility['icon_key']);
+
     return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 15),
+      margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
-        side: BorderSide(color: Colors.grey.shade200),
-        borderRadius: BorderRadius.circular(15),
+        side: const BorderSide(color: kBorder),
+        borderRadius: BorderRadius.circular(18),
       ),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: isAvailable
-              ? theme.primaryColor.withOpacity(0.1)
-              : Colors.grey.shade100,
-          child: Icon(
-            icon,
-            color: isAvailable ? theme.primaryColor : Colors.grey,
+      child: Opacity(
+        opacity: isReservable ? 1.0 : 0.6,
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          leading: CircleAvatar(
+            backgroundColor: theme.primaryColor.withOpacity(0.08),
+            child: Icon(icon, color: theme.primaryColor),
           ),
-        ),
-        title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(
-          status,
-          style: TextStyle(
-            color: isAvailable ? theme.primaryColor : Colors.red,
-          ),
-        ),
-        trailing: ElevatedButton(
-          onPressed: isAvailable
-              ? () => _selectReservation(context, name)
-              : null, // 실제 로직 연결 필요
-          style: ElevatedButton.styleFrom(
-            backgroundColor: isAvailable
-                ? theme.colorScheme.secondary
-                : Colors.grey.shade300,
-            foregroundColor: isAvailable ? Colors.black : Colors.grey,
-            elevation: 0,
-          ),
-          child: const Text("예약하기", style: TextStyle(color: Colors.black)),
+          title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600, color: kTextPrimary)),
+          subtitle: description != null && description.isNotEmpty
+              ? Text(description, style: const TextStyle(color: kTextSecondary))
+              : null,
+          trailing: isReservable
+              ? ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => FacilityBookingScreen(
+                          facility: facility,
+                          personId: widget.personId,
+                        ),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.secondary,
+                    foregroundColor: const Color(0xFF4A2E00),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  ),
+                  child: const Text("예약하기", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                )
+              : Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                  child: const Text("예약 불가", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Colors.grey)),
+                ),
         ),
       ),
     );

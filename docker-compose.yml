@@ -1,0 +1,68 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: life-connect-db
+    restart: unless-stopped
+    # 교회가 루이빌(켄터키, 미 동부 시간대)에 있으므로 서버의 날짜/시간
+    # 기준을 미 동부 시간(America/New_York)으로 고정한다. 지정하지 않으면
+    # 컨테이너 기본값인 UTC를 쓰게 되어, 저녁 시간대에는 CURRENT_DATE가
+    # 이미 다음 날짜로 넘어가는 등 예약/출석/마감 로직이 실제 날짜와
+    # 어긋난다. America/New_York을 쓰는 이유는 서머타임(DST)을 자동으로
+    # 반영하기 때문 - 고정된 UTC-5 오프셋을 쓰면 서머타임 기간에는 한 시간
+    # 어긋난다.
+    command: ["postgres", "-c", "timezone=America/New_York"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-root}
+      POSTGRES_DB: ${POSTGRES_DB:-church_db}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app_user} -d ${POSTGRES_DB:-church_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: life-connect-backend
+    restart: unless-stopped
+    environment:
+      DB_USER: ${POSTGRES_USER:-app_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-root}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-church_db}
+      PORT: 3000
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        API_BASE_URL: ${API_BASE_URL:-http://localhost:3000}
+    container_name: life-connect-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  pgdata:
