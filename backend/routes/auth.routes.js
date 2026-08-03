@@ -42,7 +42,7 @@ router.post('/login', asyncHandler(async (req, res) => {
   const { person_id, pin } = req.body;
   console.log(`\n--- 로그인 시도 --- 입력된 ID: ${person_id}`);
 
-  const userQuery = 'SELECT pin_code, is_default_pin, membership_role, church_title FROM members WHERE person_id = $1::BIGINT';
+  const userQuery = 'SELECT pin_code, is_default_pin, membership_role, church_title, attendance_token FROM members WHERE person_id = $1::BIGINT';
   const userResult = await pool.query(userQuery, [person_id]);
 
   if (userResult.rows.length === 0) {
@@ -84,6 +84,7 @@ router.post('/login', asyncHandler(async (req, res) => {
     membership_role: userData.membership_role,
     church_title: userData.church_title,
     is_default_pin: userData.is_default_pin,
+    attendance_token: userData.attendance_token,
   });
 }));
 

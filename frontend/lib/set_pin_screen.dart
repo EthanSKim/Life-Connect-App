@@ -12,6 +12,7 @@ class SetPinScreen extends StatefulWidget {
   final String oldPin; // 방금 로그인에 사용한 기본 PIN
   final bool isAdmin;
   final String userTitle;
+  final String attendanceToken;
 
   const SetPinScreen({
     super.key,
@@ -20,6 +21,7 @@ class SetPinScreen extends StatefulWidget {
     required this.oldPin,
     required this.isAdmin,
     required this.userTitle,
+    required this.attendanceToken,
   });
 
   @override
@@ -58,7 +60,7 @@ class _SetPinScreenState extends State<SetPinScreen> {
           builder: (context) => MainTabScreen(
             userName: widget.userName,
             personId: widget.personId,
-            userPin: _newPinController.text,
+            attendanceToken: widget.attendanceToken,
             isAdmin: widget.isAdmin,
             userTitle: widget.userTitle,
           ),

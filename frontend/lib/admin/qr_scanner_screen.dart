@@ -19,14 +19,16 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     super.dispose();
   }
 
-  Future<void> _handleScan(String qrData) async {
+  Future<void> _handleScan(String scannedToken) async {
     if (!_isScanning) return;
     setState(() => _isScanning = false);
 
     String title = "출석 확인";
     String message;
     try {
-      final data = await ApiClient.post('/api/attendance/scan', body: {"qr_data": qrData});
+      // QR은 회원가입 시 한 번 발급되는 전용 토큰만 담는다 (로그인 PIN과
+      // 무관 - PIN이 바뀌어도 이 QR은 계속 유효하다).
+      final data = await ApiClient.post('/api/attendance/scan', body: {"token": scannedToken});
       message = data['message'];
     } on ApiException catch (e) {
       title = "오류";
@@ -53,33 +55,12 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     );
   }
 
-  // 카메라를 사용할 수 없는 경우를 대비한 수동 입력 (이름|PIN 형식)
-  void _showManualEntryDialog() {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("QR 코드 직접 입력"),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: "이름|PIN (예: 박민우|123456)"),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("취소")),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              if (controller.text.contains('|')) _handleScan(controller.text);
-            },
-            child: const Text("확인"),
-          ),
-        ],
-      ),
-    );
-  }
-
   // 카메라 초기화 실패 시 원인을 알 수 있는 안내 화면
   // (기존에는 mobile_scanner의 기본 "!" 아이콘만 표시되어 원인을 알 수 없었음)
+  //
+  // QR이 이제 사람이 타이핑할 수 없는 무작위 토큰이라, 카메라를 못 쓸 때의
+  // 대안은 "직접 입력" 다이얼로그가 아니라 출석 확인 화면의 체크박스다 -
+  // 그 화면은 이미 개별/일괄 수동 체크를 지원하므로 그쪽으로 안내한다.
   Widget _buildScannerError(MobileScannerException error) {
     String message;
     switch (error.errorCode) {
@@ -90,8 +71,6 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
         message = "이 기기 또는 브라우저에서는 카메라를 지원하지 않습니다.";
         break;
       default:
-        // 웹에서 흔한 원인: HTTPS(또는 localhost)가 아닌 주소로 접속한 경우
-        // 브라우저가 카메라 접근 자체를 차단합니다.
         message = "카메라를 시작할 수 없습니다.\n"
             "웹으로 접속 중이라면 https 주소(또는 localhost)로 접속했는지 확인해주세요.\n"
             "(${error.errorDetails?.message ?? error.errorCode.name})";
@@ -107,11 +86,17 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
           const Icon(Icons.videocam_off_outlined, color: Colors.white54, size: 48),
           const SizedBox(height: 16),
           Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)),
+          const SizedBox(height: 8),
+          const Text(
+            "카메라를 사용할 수 없다면 출석 확인 화면에서 직접 체크해주세요.",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white54, fontSize: 12),
+          ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: _showManualEntryDialog,
-            icon: const Icon(Icons.keyboard),
-            label: const Text("직접 입력으로 출석 처리"),
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back),
+            label: const Text("출석 확인 화면으로 돌아가기"),
           ),
         ],
       ),
@@ -121,16 +106,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("출석 체크 스캐너"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.keyboard),
-            tooltip: "직접 입력",
-            onPressed: _showManualEntryDialog,
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text("출석 체크 스캐너")),
       body: Stack(
         children: [
           MobileScanner(

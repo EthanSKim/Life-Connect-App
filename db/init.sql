@@ -73,7 +73,11 @@ CREATE TABLE IF NOT EXISTS members (
     is_default_pin BOOLEAN DEFAULT TRUE,
     life_team_id BIGINT REFERENCES life_teams(life_team_id) ON DELETE SET NULL,
     life_team VARCHAR(100),
-    church_title VARCHAR(50)
+    church_title VARCHAR(50),
+    -- QR 출석 체크에 쓰이는 전용 토큰. 로그인 PIN과 완전히 분리되어 있어서
+    -- PIN을 바꿔도 QR이 깨지지 않고, 유출되어도 로그인 자격 증명이 함께
+    -- 노출되지 않는다. 생성 시 한 번만 발급 (재발급 기능은 아직 없음).
+    attendance_token VARCHAR(64) UNIQUE
 );
 
 ALTER TABLE households
@@ -191,24 +195,24 @@ INSERT INTO members (
     status, membership_role, campus_name, mobile_phone, email,
     address_street, address_city, address_state, address_zip,
     address_country_code, address_country,
-    household_id, household_name, is_primary_contact, relationship_to_head, pin_code
+    household_id, household_name, is_primary_contact, relationship_to_head, pin_code, attendance_token
 ) VALUES
 (132530884, '민우', '박', '1983-05-18', 'Male', 'Married', '2014-10-09', FALSE, NULL,
  'active', 'Admin', 'Louisville Woori Church', '(502) 602-7799', 'blissmw@gmail.com',
  '1846 Washington Blvd', 'Louisville', 'KY', '40242-3443', 'US', 'United States',
- 18560919, '박민우''s Household', TRUE, '본인', '123456'),
+ 18560919, '박민우''s Household', TRUE, '본인', '123456', '49d497a8649492a2f33dcb700b3fb725ee2a9689c3776904'),
 (132728606, '수나', '김', '1986-04-20', 'Female', 'Married', '2014-10-09', FALSE, NULL,
  'active', 'Member', 'Louisville Woori Church', '(502) 602-7511', 'eliel0420@gmail.com',
  '1846 Washington Blvd', 'Louisville', 'KY', '40242-3443', 'US', 'United States',
- 18560919, '박민우''s Household', FALSE, '배우자', '123456'),
+ 18560919, '박민우''s Household', FALSE, '배우자', '123456', '517b16de91b9080a950ecb998be7ce44ea2f23abf28b90c5'),
 (133163580, '예하', '박', '2016-10-08', 'Female', NULL, NULL, TRUE, 1,
  'active', 'Member', '초등부 | Kids', NULL, NULL,
  '1846 Washington Blvd', 'Louisville', 'KY', '40242-3443', 'US', 'United States',
- 18560919, '박민우''s Household', FALSE, '자녀', '123456'),
+ 18560919, '박민우''s Household', FALSE, '자녀', '123456', 'fcd139917a58388994ff01b89c4f8ffe15230cffe6242681'),
 (133165053, '루하', '박', '2019-04-09', 'Female', NULL, NULL, TRUE, -1,
  'active', 'Member', '초등부 | Kids', NULL, NULL,
  '1846 Washington Blvd', 'Louisville', 'KY', '40242-3443', 'US', 'United States',
- 18560919, '박민우''s Household', FALSE, '자녀', '123456')
+ 18560919, '박민우''s Household', FALSE, '자녀', '123456', '112d583f6ca3c16d51e3aaa69ee7566615310b56b2226e1a')
 ON CONFLICT (person_id) DO NOTHING;
 
 UPDATE households SET head_of_household_id = 132530884 WHERE household_id = 18560919;

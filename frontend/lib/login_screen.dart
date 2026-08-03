@@ -65,11 +65,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 oldPin: _pinController.text,
                 isAdmin: data['membership_role'] == 'Admin',
                 userTitle: data['church_title'] ?? '성도님',
+                attendanceToken: data['attendance_token'] ?? '',
               )
             : MainTabScreen(
           userName: _nameController.text,
           personId: _personId!, // ID 전달
-          userPin: _pinController.text, // PIN 전달 추가
+          attendanceToken: data['attendance_token'] ?? '',
           isAdmin: data['membership_role'] == 'Admin',
           userTitle: data['church_title'] ?? '성도님',
         )),

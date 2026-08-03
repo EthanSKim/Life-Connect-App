@@ -45,4 +45,13 @@ function decryptPin(storedValue) {
   return plaintext.toString('utf8');
 }
 
-module.exports = { encryptPin, decryptPin, isEncrypted };
+// Opaque random token used for QR attendance check-in - deliberately
+// unrelated to the login PIN (see decision history: reusing PIN as the QR's
+// identity meant a PIN change broke the QR, and a leaked QR screenshot also
+// leaked a login credential). 24 bytes -> 48 hex chars, plenty of entropy
+// for an unguessable per-member token.
+function generateAttendanceToken() {
+  return crypto.randomBytes(24).toString('hex');
+}
+
+module.exports = { encryptPin, decryptPin, isEncrypted, generateAttendanceToken };

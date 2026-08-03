@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const asyncHandler = require('../middleware/asyncHandler');
-const { encryptPin, decryptPin } = require('../crypto');
+const { encryptPin, decryptPin, generateAttendanceToken } = require('../crypto');
 const { requireAdmin, requireSelfOrAdmin } = require('../auth');
 
 // 성도 등록/수정 요청 바디에서 공통으로 뽑아 쓰는 필드 목록.
@@ -61,7 +61,7 @@ router.get('/', requireAdmin, asyncHandler(async (req, res) => {
   const result = await pool.query(query, values);
   // pin_code is never returned in bulk listings, even encrypted - admins
   // use the dedicated GET /:id/pin endpoint to look one up.
-  const rows = result.rows.map(({ pin_code, ...rest }) => rest);
+  const rows = result.rows.map(({ pin_code, attendance_token, ...rest }) => rest);
   res.json(rows);
 }));
 
@@ -84,9 +84,9 @@ router.post('/', requireAdmin, asyncHandler(async (req, res) => {
       address_street, address_city, address_state, address_zip,
       address_country_code, address_country,
       membership_role, life_team_id, life_team, church_title, campus_name,
-      pin_code, is_default_pin, created_at
+      pin_code, is_default_pin, attendance_token, created_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW())
     RETURNING *`;
 
   // person_id는 실제 운영 환경에선 Sequence를 쓰지만, 여기서는 고유한 BIGINT를 위해 timestamp 사용
@@ -102,11 +102,11 @@ router.post('/', requireAdmin, asyncHandler(async (req, res) => {
     f.address_street, f.address_city, f.address_state, f.address_zip,
     f.address_country_code, f.address_country,
     f.membership_role, f.life_team_id, lifeTeamName, f.church_title, f.campus_name,
-    encryptPin(initialPin), true,
+    encryptPin(initialPin), true, generateAttendanceToken(),
   ];
 
   const result = await pool.query(query, values);
-  const { pin_code, ...memberWithoutPin } = result.rows[0];
+  const { pin_code, attendance_token, ...memberWithoutPin } = result.rows[0];
   res.status(201).json(memberWithoutPin);
 }));
 
@@ -119,7 +119,7 @@ router.get('/:id', requireSelfOrAdmin('id'), asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "성도를 찾을 수 없습니다." });
   }
 
-  const { pin_code, ...member } = memberResult.rows[0];
+  const { pin_code, attendance_token, ...member } = memberResult.rows[0];
 
   // 가족 정보 조회 (같은 세대에 속한 다른 성도들 + 관계)
   let family = [];
@@ -190,7 +190,7 @@ router.put('/:id', requireSelfOrAdmin('id'), asyncHandler(async (req, res) => {
     }
 
     await client.query('COMMIT');
-    const { pin_code, ...memberWithoutPin } = result.rows[0];
+    const { pin_code, attendance_token, ...memberWithoutPin } = result.rows[0];
     res.json(memberWithoutPin);
   } catch (err) {
     await client.query('ROLLBACK');

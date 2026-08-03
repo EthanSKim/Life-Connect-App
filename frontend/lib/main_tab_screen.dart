@@ -18,13 +18,13 @@ class MainTabScreen extends StatefulWidget {
   final int personId;    // 로그인한 사용자 ID를 받습니다.
   final bool isAdmin;    // 관리자 여부
   final String userTitle; // 직급 (목사, 집사 등)
-  final String userPin;   // QR 생성을 위한 PIN
+  final String attendanceToken; // QR 출석 체크용 전용 토큰 (로그인 PIN과 무관)
 
   const MainTabScreen({
     super.key,
     required this.userName, // 필수 인자로 설정
     required this.personId,
-    required this.userPin,
+    required this.attendanceToken,
     required this.isAdmin,
     required this.userTitle,
   });
@@ -363,7 +363,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 ),
               ),
               child: QrImageView(
-                data: "${widget.userName}|${widget.userPin}", // 이름|PIN 형식으로 변경
+                data: widget.attendanceToken,
                 version: QrVersions.auto,
                 size: 250.0,
               ),

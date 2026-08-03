@@ -75,31 +75,26 @@ router.post('/scan', requireAdmin, asyncHandler(async (req, res) => {
     return res.status(409).json({ success: false, message: "오늘 출석은 이미 마감되었습니다." });
   }
 
-  const { qr_data } = req.body; // QR 데이터 형식: "박민우|123456"
-
-  if (!qr_data || !qr_data.includes('|')) {
-    return res.status(400).json({ success: false, message: "올바르지 않은 QR 코드 형식입니다." });
+  // QR은 이제 이름/PIN이 아니라 회원가입 시 한 번 발급되는 전용 토큰만
+  // 담는다 (로그인 PIN과 완전히 분리 - PIN이 바뀌어도 QR은 그대로 유효하고,
+  // QR이 유출되어도 로그인 자격 증명은 노출되지 않는다). 토큰은 컬럼에
+  // UNIQUE 제약이 걸려 있어 동명이인 문제도 애초에 발생하지 않는다.
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ success: false, message: "올바르지 않은 QR 코드입니다." });
   }
 
-  const [name, pin] = qr_data.split('|');
-
-  // 1. 이름과 PIN이 일치하는 사용자 조회 (공백 제거 로직 포함)
-  const userQuery = `
-    SELECT person_id, first_name, last_name 
-    FROM members 
-    WHERE (REPLACE(last_name || first_name, ' ', '') = REPLACE($1, ' ', '') OR REPLACE(first_name, ' ', '') = REPLACE($1, ' ', ''))
-      AND REPLACE(pin_code, ' ', '') = REPLACE($2, ' ', '')
-  `;
-  const userResult = await pool.query(userQuery, [name, pin]);
-
-  if (userResult.rows.length === 0) {
+  const result = await pool.query(
+    "SELECT person_id, first_name, last_name FROM members WHERE attendance_token = $1 AND status != 'inactive'",
+    [token]
+  );
+  if (result.rows.length === 0) {
     return res.status(404).json({ success: false, message: "성도 정보가 일치하지 않거나 등록되지 않았습니다." });
   }
 
-  const personId = userResult.rows[0].person_id;
-  const fullName = `${userResult.rows[0].last_name}${userResult.rows[0].first_name}`;
+  const { person_id: personId, last_name, first_name } = result.rows[0];
+  const fullName = `${last_name}${first_name}`;
 
-  // 2. 출석 기록 추가 (오늘 날짜)
   const attendanceQuery = `
     INSERT INTO attendance (person_id, attendance_date, status)
     VALUES ($1, CURRENT_DATE, TRUE)
