@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../api_client.dart';
@@ -9,12 +10,26 @@ class QRScannerScreen extends StatefulWidget {
   State<QRScannerScreen> createState() => _QRScannerScreenState();
 }
 
+/// Result of a single scan, shown as a brief auto-dismissing overlay instead
+/// of a dialog the admin has to tap through - during check-in, people are
+/// scanning one after another and a confirm button between every scan just
+/// slows the line down.
+class _ScanResult {
+  final bool success;
+  final String title;
+  final String message;
+  const _ScanResult({required this.success, required this.title, required this.message});
+}
+
 class _QRScannerScreenState extends State<QRScannerScreen> {
   bool _isScanning = true;
   final MobileScannerController _controller = MobileScannerController();
+  _ScanResult? _lastResult;
+  Timer? _resultTimer;
 
   @override
   void dispose() {
+    _resultTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -23,36 +38,29 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     if (!_isScanning) return;
     setState(() => _isScanning = false);
 
-    String title = "출석 확인";
-    String message;
+    _ScanResult result;
     try {
       // QR은 회원가입 시 한 번 발급되는 전용 토큰만 담는다 (로그인 PIN과
       // 무관 - PIN이 바뀌어도 이 QR은 계속 유효하다).
       final data = await ApiClient.post('/api/attendance/scan', body: {"token": scannedToken});
-      message = data['message'];
+      result = _ScanResult(success: true, title: data['name'] ?? '', message: data['message'] ?? '출석 확인되었습니다.');
     } on ApiException catch (e) {
-      title = "오류";
-      message = e.message;
+      result = _ScanResult(success: false, title: "오류", message: e.message);
     }
 
     if (!mounted) return;
+    setState(() => _lastResult = result);
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              setState(() => _isScanning = true);
-            },
-            child: const Text("확인"),
-          ),
-        ],
-      ),
-    );
+    // 3초 후 자동으로 사라지고, 다음 사람을 바로 스캔할 수 있도록 재개된다 -
+    // 관리자가 확인 버튼을 누를 필요가 없다.
+    _resultTimer?.cancel();
+    _resultTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      setState(() {
+        _lastResult = null;
+        _isScanning = true;
+      });
+    });
   }
 
   // 카메라 초기화 실패 시 원인을 알 수 있는 안내 화면
@@ -103,6 +111,41 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     );
   }
 
+  Widget _buildResultOverlay(_ScanResult result) {
+    final color = result.success ? const Color(0xFF2F6FED) : const Color(0xFFE24B4A);
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black54,
+        alignment: Alignment.center,
+        child: AnimatedScale(
+          scale: 1,
+          duration: const Duration(milliseconds: 200),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 40),
+            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(32)),
+                  child: Icon(result.success ? Icons.check : Icons.close, color: Colors.white, size: 36),
+                ),
+                const SizedBox(height: 16),
+                if (result.success)
+                  Text(result.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Text(result.message, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: Colors.grey)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -130,6 +173,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
               decoration: BoxDecoration(border: Border.all(color: Colors.white, width: 2), borderRadius: BorderRadius.circular(20)),
             ),
           ),
+          if (_lastResult != null) _buildResultOverlay(_lastResult!),
         ],
       ),
     );

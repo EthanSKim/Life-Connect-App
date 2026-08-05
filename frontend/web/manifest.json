@@ -1,11 +1,11 @@
 {
-    "name": "life_connect",
-    "short_name": "life_connect",
+    "name": "Life Connect",
+    "short_name": "Life Connect",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F7F8FB",
+    "theme_color": "#2F6FED",
+    "description": "Louisville Woori Church member app",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

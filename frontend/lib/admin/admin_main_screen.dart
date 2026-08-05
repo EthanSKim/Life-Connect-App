@@ -5,11 +5,12 @@ import 'attendance_screen.dart';
 import 'facility_management_screen.dart';
 import 'facility_availability_screen.dart';
 import 'life_team_management_screen.dart';
+import 'notice_management_screen.dart';
 
 /// One entry describes one admin feature - the single source of truth for
 /// both the mobile hub grid and the desktop nav rail. Adding a future admin
-/// page (announcements, reports, etc.) is just adding one more entry here -
-/// never a navigation redesign.
+/// page (reports, etc.) is just adding one more entry here - never a
+/// navigation redesign.
 class _AdminDestination {
   final String label;
   final IconData icon;
@@ -23,6 +24,7 @@ final List<_AdminDestination> _adminDestinations = [
   _AdminDestination(label: "장소 관리", icon: Icons.location_on_outlined, builder: (_) => const FacilityManagementScreen()),
   _AdminDestination(label: "예약 시간 설정", icon: Icons.event_available_outlined, builder: (_) => const FacilityAvailabilityScreen()),
   _AdminDestination(label: "라이프팀 관리", icon: Icons.groups_outlined, builder: (_) => const LifeTeamManagementScreen()),
+  _AdminDestination(label: "공지사항 관리", icon: Icons.campaign_outlined, builder: (_) => const NoticeManagementScreen()),
 ];
 
 /// Admin hub. On mobile this is a landing screen with one tile per feature -

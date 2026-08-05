@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'profile_screen.dart';
@@ -12,6 +13,9 @@ import 'facility_booking_screen.dart';
 import 'main.dart';
 import 'api_client.dart';
 import 'widgets/facility_icons.dart';
+import 'widgets/notice_card.dart';
+import 'notice_detail_screen.dart';
+import 'notice_list_screen.dart';
 
 class MainTabScreen extends StatefulWidget {
   final String userName; // 로그인한 사용자 이름을 받습니다.
@@ -39,7 +43,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
   bool _isLoadingNotices = true;
   List<dynamic> _notices = [];
   bool _isAttended = false; // 오늘 출석 여부 상태 추가
-  
+  Timer? _attendancePollTimer; // QR 탭을 보고 있는 동안, 관리자가 스캔하면 바로 반영되도록 주기적으로 확인
+
   // 예약 관련 상태
   List<dynamic> _facilities = [];
   bool _isLoadingFacilities = true;
@@ -50,6 +55,28 @@ class _MainTabScreenState extends State<MainTabScreen> {
     _fetchNotices();
     _fetchFacilities();
     _checkAttendanceStatus(); // 출석 상태 확인 호출
+  }
+
+  @override
+  void dispose() {
+    _attendancePollTimer?.cancel();
+    super.dispose();
+  }
+
+  // QR 화면을 보고 있는 동안에만 폴링한다 (다른 탭에 있을 때 계속 도는 것을 방지).
+  // 이미 출석 처리되었으면 더 확인할 필요가 없으므로 시작하지 않는다.
+  void _startAttendancePolling() {
+    _attendancePollTimer?.cancel();
+    if (_isAttended) return;
+    _attendancePollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      await _checkAttendanceStatus();
+      if (_isAttended) timer.cancel();
+    });
+  }
+
+  void _stopAttendancePolling() {
+    _attendancePollTimer?.cancel();
+    _attendancePollTimer = null;
   }
 
   // 오늘 출석했는지 서버에 확인
@@ -64,7 +91,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   Future<void> _fetchNotices() async {
     try {
-      final data = await ApiClient.get('/api/notices');
+      final data = await ApiClient.get('/api/notices?limit=4');
       if (mounted) {
         setState(() {
           _notices = data;
@@ -137,7 +164,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     style: TextStyle(fontSize: 15, color: kTextSecondary),
                   ),
                   Text(
-                    "${widget.userName} ${widget.userTitle}", // DB에 등록된 직급 사용
+                    "${widget.userName} ${widget.userTitle}님", // 인사말에서만 님 붙임 (직분 값 자체는 그대로)
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.w600,
@@ -178,7 +205,10 @@ class _MainTabScreenState extends State<MainTabScreen> {
           delayMs: 150,
           child: _buildAttendanceStatusCard(
             isChecked: _isAttended, // 실제 상태 적용
-            onTap: () => setState(() => _selectedIndex = 1),
+            onTap: () {
+              setState(() => _selectedIndex = 1);
+              _startAttendancePolling();
+            },
           ),
         ),
 
@@ -195,7 +225,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: kTextPrimary),
               ),
               TextButton(
-                onPressed: () {},
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NoticeListScreen())),
                 child: const Text("전체보기", style: TextStyle(color: kTextSecondary, fontWeight: FontWeight.normal)),
               ),
             ],
@@ -211,10 +241,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   var notice = entry.value;
                   return _buildAnimatedItem(
                     delayMs: 450 + (idx * 100),
-                    child: _buildNoticeItem(
-                      notice['title'],
-                      notice['date'],
-                      notice['is_new'],
+                    child: NoticeCard(
+                      notice: notice,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => NoticeDetailScreen(notice: notice)),
+                      ),
                     ),
                   );
                 }).toList(),
@@ -294,48 +326,38 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  Widget _buildNoticeItem(String title, String date, bool isNew) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kBorder),
-      ),
-      child: ListTile(
-        title: Row(
-          children: [
-            if (isNew)
-              Container(
-                margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.secondary,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  "NEW",
-                  style: TextStyle(fontSize: 10, color: Color(0xFF4A2E00), fontWeight: FontWeight.w600),
-                ),
-              ),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-        subtitle: Text(date, style: const TextStyle(color: kTextSecondary)),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: kTextSecondary),
-        onTap: () {},
-      ),
-    );
-  }
-
   // --- QR 스크린 및 예약 스크린 (애니메이션 적용 추천) ---
   Widget _buildQRScreen() {
+    final theme = Theme.of(context);
+    if (_isAttended) {
+      return _buildAnimatedItem(
+        delayMs: 0,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(color: theme.primaryColor, borderRadius: BorderRadius.circular(44)),
+                child: const Icon(Icons.check, color: Colors.white, size: 48),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                "출석이 완료되었습니다",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: kTextPrimary),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "${widget.userName} ${widget.userTitle}",
+                style: TextStyle(fontSize: 15, color: theme.primaryColor, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return _buildAnimatedItem(
       delayMs: 0,
       child: Center(
@@ -491,6 +513,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
           // 추가/변경해도 홈/예약 탭의 기존 목록은 자동으로 갱신되지 않는다.
           // 탭을 누를 때마다 다시 불러와서 항상 최신 상태를 보장한다.
           _fetchFacilities();
+          _fetchNotices();
+          // QR 탭(index 1)을 보고 있는 동안에는 관리자가 스캔하는 즉시
+          // 반영되도록 주기적으로 확인하고, 다른 탭으로 이동하면 멈춘다.
+          if (index == 1) {
+            _startAttendancePolling();
+          } else {
+            _stopAttendancePolling();
+          }
         },
         items: [
           const BottomNavigationBarItem(

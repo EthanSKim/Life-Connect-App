@@ -64,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 personId: _personId!,
                 oldPin: _pinController.text,
                 isAdmin: data['membership_role'] == 'Admin',
-                userTitle: data['church_title'] ?? '성도님',
+                userTitle: data['church_title'] ?? '성도',
                 attendanceToken: data['attendance_token'] ?? '',
               )
             : MainTabScreen(
@@ -72,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
           personId: _personId!, // ID 전달
           attendanceToken: data['attendance_token'] ?? '',
           isAdmin: data['membership_role'] == 'Admin',
-          userTitle: data['church_title'] ?? '성도님',
+          userTitle: data['church_title'] ?? '성도',
         )),
       );
     } on ApiException catch (e) {

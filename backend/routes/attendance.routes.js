@@ -103,7 +103,7 @@ router.post('/scan', requireAdmin, asyncHandler(async (req, res) => {
   `;
   await pool.query(attendanceQuery, [personId]);
 
-  res.json({ success: true, message: `${fullName}님, 출석 확인되었습니다.` });
+  res.json({ success: true, name: fullName, message: `${fullName}님, 출석 확인되었습니다.` });
 }));
 
 // 4. 출석 체크 수동 변경 (관리자가 직접 체크/해제 - 성도가 QR을 깜빡했을 때 등)
