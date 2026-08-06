@@ -67,10 +67,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
   // 이미 출석 처리되었으면 더 확인할 필요가 없으므로 시작하지 않는다.
   void _startAttendancePolling() {
     _attendancePollTimer?.cancel();
-    if (_isAttended) return;
+    // 출석 상태는 되돌려질 수 있다 (관리자가 실수로 체크 해제하는 등),
+    // 그래서 이미 출석 상태여도 폴링을 계속 유지한다 - 예전에는 여기서
+    // 출석 상태면 아예 시작하지 않고, 폴링 중에도 출석되는 순간 멈춰버려서
+    // 관리자가 체크를 해제해도 이 화면에 있는 동안은 절대 반영되지 않았다.
     _attendancePollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       await _checkAttendanceStatus();
-      if (_isAttended) timer.cancel();
     });
   }
 
@@ -91,7 +93,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   Future<void> _fetchNotices() async {
     try {
-      final data = await ApiClient.get('/api/notices?limit=4');
+      final data = await ApiClient.get('/api/notices?limit=3');
       if (mounted) {
         setState(() {
           _notices = data;
@@ -514,6 +516,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
           // 탭을 누를 때마다 다시 불러와서 항상 최신 상태를 보장한다.
           _fetchFacilities();
           _fetchNotices();
+          // 출석 상태도 마찬가지 - 다른 기기(관리자)에서 체크/해제한 내용이
+          // 어느 탭으로 전환하든 반영되도록 매번 다시 확인한다.
+          _checkAttendanceStatus();
           // QR 탭(index 1)을 보고 있는 동안에는 관리자가 스캔하는 즉시
           // 반영되도록 주기적으로 확인하고, 다른 탭으로 이동하면 멈춘다.
           if (index == 1) {

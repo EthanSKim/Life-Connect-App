@@ -19,8 +19,11 @@ router.get('/status/:person_id', requireSelfOrAdmin('person_id'), asyncHandler(a
   const { person_id } = req.params;
   const query = 'SELECT status FROM attendance WHERE person_id = $1 AND attendance_date = CURRENT_DATE';
   const result = await pool.query(query, [person_id]);
-  // 데이터가 존재하면 출석한 것으로 간주
-  res.json({ attended: result.rows.length > 0 });
+  // 행이 존재하는지가 아니라 실제 status 값을 확인해야 한다 - 체크 해제는
+  // 행을 삭제하는 게 아니라 같은 행의 status를 false로 업데이트하는
+  // 방식이라서, "행이 있으면 출석"으로 판단하면 한 번이라도 체크된 날은
+  // 이후 해제해도 계속 출석으로 잘못 표시된다.
+  res.json({ attended: result.rows[0]?.status === true });
 }));
 
 // 3. 세대별 출석 데이터 + 오늘 마감 여부 조회 (AdminMainScreen - 출석 확인 탭 대응)
