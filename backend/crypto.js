@@ -35,14 +35,24 @@ function decryptPin(storedValue) {
     // Legacy plaintext (e.g. un-migrated seed data) - return as-is.
     return storedValue;
   }
-  const [ivHex, authTagHex, ciphertextHex] = storedValue.split(':');
-  const decipher = crypto.createDecipheriv(ALGORITHM, KEY, Buffer.from(ivHex, 'hex'));
-  decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
-  const plaintext = Buffer.concat([
-    decipher.update(Buffer.from(ciphertextHex, 'hex')),
-    decipher.final(),
-  ]);
-  return plaintext.toString('utf8');
+  try {
+    const [ivHex, authTagHex, ciphertextHex] = storedValue.split(':');
+    const decipher = crypto.createDecipheriv(ALGORITHM, KEY, Buffer.from(ivHex, 'hex'));
+    decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
+    const plaintext = Buffer.concat([
+      decipher.update(Buffer.from(ciphertextHex, 'hex')),
+      decipher.final(),
+    ]);
+    return plaintext.toString('utf8');
+  } catch (err) {
+    // Corrupted/tampered ciphertext (or a value that only coincidentally
+    // matches the iv:authTag:ciphertext shape). Fail safe rather than
+    // throwing - callers compare this against a submitted PIN, so an empty
+    // string just becomes an ordinary "PIN doesn't match" instead of a raw
+    // 500 that leaks internals about a data-integrity problem.
+    console.error('[crypto] decryptPin failed on a value matching the encrypted format:', err.message);
+    return '';
+  }
 }
 
 // Opaque random token used for QR attendance check-in - deliberately

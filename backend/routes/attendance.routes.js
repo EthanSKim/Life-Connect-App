@@ -116,6 +116,9 @@ router.post('/', requireAdmin, asyncHandler(async (req, res) => {
   }
 
   const { person_id, is_present } = req.body;
+  if (!person_id) {
+    return res.status(400).json({ success: false, message: "person_id가 필요합니다." });
+  }
   const query = `
     INSERT INTO attendance (person_id, attendance_date, status)
     VALUES ($1, CURRENT_DATE, $2)

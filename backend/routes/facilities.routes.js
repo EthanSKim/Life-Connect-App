@@ -197,7 +197,7 @@ router.post('/:id/overrides', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { date, slots } = req.body; // slots: [{ start_time: 'HH:MM', is_open: true|false|null }, ...]
 
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Array.isArray(slots)) {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Array.isArray(slots) || slots.length > 16) {
     return res.status(400).json({ success: false, message: "요청 형식이 올바르지 않습니다." });
   }
 

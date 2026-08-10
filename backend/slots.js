@@ -14,7 +14,11 @@ function minutesToTimeStr(mins) {
 }
 
 function timeStrToMinutes(timeStr) {
-  // Accepts 'HH:MM' or 'HH:MM:SS'
+  // Accepts 'HH:MM' or 'HH:MM:SS'. Returns NaN (not a throw) for anything
+  // that isn't a string, so callers doing NaN-safe comparisons (like
+  // isValidSlotRange) can treat malformed input as "invalid" instead of
+  // crashing on it.
+  if (typeof timeStr !== 'string') return NaN;
   const [h, m] = timeStr.split(':').map(Number);
   return h * 60 + m;
 }

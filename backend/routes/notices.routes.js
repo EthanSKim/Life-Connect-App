@@ -12,6 +12,7 @@ router.get('/', requireAuth, asyncHandler(async (req, res) => {
   const includeInactive = req.query.include_inactive === 'true' && req.user.role === 'admin';
   const limit = parseInt(req.query.limit, 10);
 
+  const params = [];
   let query = `
     SELECT
       notice_id, title, content,
@@ -23,10 +24,11 @@ router.get('/', requireAuth, asyncHandler(async (req, res) => {
     ORDER BY created_at DESC
   `;
   if (Number.isInteger(limit) && limit > 0) {
-    query += ` LIMIT ${limit}`;
+    params.push(limit);
+    query += ` LIMIT $${params.length}`;
   }
 
-  const result = await pool.query(query);
+  const result = await pool.query(query, params);
   res.json(result.rows);
 }));
 

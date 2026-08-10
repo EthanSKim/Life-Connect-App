@@ -8,12 +8,18 @@ const { PKPass } = require('passkit-generator');
 // 10. Apple Wallet 패스 발급 API
 router.get('/apple-pass/:person_id', requireSelfOrAdmin('person_id'), asyncHandler(async (req, res) => {
   const { person_id } = req.params;
-  const result = await pool.query('SELECT * FROM members WHERE person_id = $1', [person_id]);
+  const result = await pool.query(
+    'SELECT first_name, last_name, church_title, attendance_token FROM members WHERE person_id = $1',
+    [person_id]
+  );
   if (result.rows.length === 0) return res.status(404).send("성도를 찾을 수 없습니다.");
 
   const member = result.rows[0];
   const fullName = `${member.last_name}${member.first_name}`;
-  const qrData = `${fullName}|${member.pin_code}`;
+  // QR에는 이름/PIN이 아니라 회원가입 시 발급되는 전용 토큰만 담는다
+  // (main_tab_screen.dart의 QR 화면, qr_scanner_screen.dart의 스캔 로직과
+  // 동일한 방식 - 로그인 PIN과 완전히 분리됨).
+  const qrData = member.attendance_token;
 
   // Pass 생성 (실제 구현 시 인증서 파일들이 필요합니다)
   const pass = await PKPass.from({

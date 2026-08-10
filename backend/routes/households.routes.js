@@ -47,6 +47,11 @@ router.put('/:id', requireAdmin, asyncHandler(async (req, res) => {
       }
     }
 
+    if (household_name !== undefined && !household_name.trim()) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, message: "세대 이름을 입력해주세요." });
+    }
+
     const name = household_name ?? existing.rows[0].household_name;
     const headId = head_of_household_id !== undefined ? head_of_household_id : existing.rows[0].head_of_household_id;
 
@@ -136,8 +141,11 @@ router.post('/link', requireAdmin, asyncHandler(async (req, res) => {
        Boolean(is_head) && targetHouseholdId !== null, person_id]
     );
 
-    // 이전 세대에 남은 사람이 없으면 정리
-    if (previousHouseholdId && previousHouseholdId !== targetHouseholdId) {
+    // 이전 세대에 남은 사람이 없으면 정리 (BIGINT는 pg에서 문자열로
+    // 돌아오지만 targetHouseholdId는 경로에 따라 숫자(Date.now())일 수
+    // 있으므로, 형변환 없이 비교하면 같은 세대인데도 다르다고 잘못
+    // 판단할 수 있다 - 문자열로 정규화해서 비교한다.)
+    if (previousHouseholdId && String(previousHouseholdId) !== String(targetHouseholdId)) {
       await client.query(
         'UPDATE households SET head_of_household_id = NULL WHERE household_id = $1 AND head_of_household_id = $2::BIGINT',
         [previousHouseholdId, person_id]

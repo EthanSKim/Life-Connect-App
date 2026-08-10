@@ -17,7 +17,7 @@ function extractMemberFields(body) {
     gender: body.gender,
     marital_status: body.marital_status || null,
     anniversary: body.anniversary || null,
-    is_child: body.is_child || false,
+    is_child: body.is_child === true,
     grade: body.grade === '' || body.grade === undefined ? null : body.grade,
     email: body.email,
     address_street: body.address_street,
@@ -31,6 +31,17 @@ function extractMemberFields(body) {
     church_title: body.church_title,
     campus_name: body.campus_name || 'Louisville Woori Church',
   };
+}
+
+// 프론트엔드도 이름을 검사하지만, 서버가 클라이언트 쪽 검증만 믿어서는 안 된다 -
+// 직접 API를 호출하면 프론트엔드 검증을 건너뛸 수 있기 때문에, 이름 없는
+// 성도가 생성되는 것을 막으려면 서버에서도 반드시 확인해야 한다.
+function validateMemberFields(f, res) {
+  if (!f.first_name || !f.first_name.trim() || !f.last_name || !f.last_name.trim()) {
+    res.status(400).json({ success: false, message: "성과 이름을 입력해주세요." });
+    return false;
+  }
+  return true;
 }
 
 // 1. 성도 목록 조회 및 검색 (기본적으로 탈퇴(inactive) 처리된 성도는 제외)
@@ -68,6 +79,7 @@ router.get('/', requireAdmin, asyncHandler(async (req, res) => {
 // 2. 새 성도 등록
 router.post('/', requireAdmin, asyncHandler(async (req, res) => {
   const f = extractMemberFields(req.body);
+  if (!validateMemberFields(f, res)) return;
 
   // life_team은 life_teams 테이블의 비정규화된 텍스트 사본이므로, ID로부터
   // 이름을 조회해서 함께 저장한다.
@@ -139,6 +151,7 @@ router.get('/:id', requireSelfOrAdmin('id'), asyncHandler(async (req, res) => {
 router.put('/:id', requireSelfOrAdmin('id'), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const f = extractMemberFields(req.body);
+  if (!validateMemberFields(f, res)) return;
 
   const client = await pool.connect();
   try {
@@ -242,6 +255,12 @@ router.delete('/:id', requireAdmin, asyncHandler(async (req, res) => {
 router.put('/:id/pin', requireSelfOrAdmin('id'), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { old_pin, new_pin } = req.body;
+
+  // 프론트엔드도 6자리 숫자인지 검사하지만, 직접 API를 호출하면 그 검증을
+  // 건너뛸 수 있으므로 서버에서도 반드시 확인해야 한다.
+  if (!/^\d{6}$/.test(String(new_pin || ''))) {
+    return res.status(400).json({ success: false, message: "새 PIN 번호는 6자리 숫자여야 합니다." });
+  }
 
   const userResult = await pool.query('SELECT pin_code FROM members WHERE person_id = $1::BIGINT', [id]);
   if (userResult.rows.length === 0) {
